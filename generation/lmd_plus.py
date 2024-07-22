@@ -3,10 +3,12 @@ import models
 import utils
 from models import pipelines, sam, model_dict
 from utils import parse, guidance, attn, latents, vis
+
 from prompt import (
     DEFAULT_SO_NEGATIVE_PROMPT,
     DEFAULT_OVERALL_NEGATIVE_PROMPT,
 )
+
 from easydict import EasyDict
 
 vae, tokenizer, text_encoder, unet, scheduler, dtype = (
@@ -129,14 +131,6 @@ def generate_single_object_with_box(
 
     mask_selected_tensor = torch.tensor(mask_selected)
 
-    # if visualize:
-    #     vis.visualize(mask_selected, "Mask (selected) after resize")
-    #     # This is only for visualizations
-    #     masked_latents = latents_all * mask_selected_tensor[None, None, None, ...]
-    #     vis.visualize_masked_latents(
-    #         latents_all, masked_latents, timestep_T=False, timestep_0=True
-    #     )
-
     return (
         latents_all,
         mask_selected_tensor,
@@ -159,9 +153,13 @@ def get_masked_latents_all_list(
 
     so_uncond_embeddings, so_cond_embeddings = so_input_embeddings
 
+    report_substeps = kwargs.pop('report_steps', False)
+
     for idx, ((prompt, phrase, word, box), input_latents) in enumerate(
         zip(so_prompt_phrase_word_box_list, input_latents_list)
     ):
+        if report_substeps: # individual latents
+            print(f'Fetching masked latents for: {prompt}')
         so_current_cond_embeddings = so_cond_embeddings[idx : idx + 1]
         so_current_text_embeddings = torch.cat(
             [so_uncond_embeddings, so_current_cond_embeddings], dim=0
@@ -225,6 +223,8 @@ def run(
     use_ref_ca=True,
     use_autocast=True,
     verbose=False,
+    show_progress=True,
+    **extra_kwargs,
 ):
     """
     spec: the spec for generation (see generate.py for how to construct a spec)
@@ -256,16 +256,20 @@ def run(
     frozen_step_ratio = min(max(frozen_step_ratio, 0.0), 1.0)
     frozen_steps = int(num_inference_steps * frozen_step_ratio)
 
-    print(
-        "Key generation settings:",
-        spec,
-        bg_seed,
-        fg_seed_start,
-        frozen_step_ratio,
-        so_gligen_scheduled_sampling_beta,
-        overall_gligen_scheduled_sampling_beta,
-        overall_max_index_step,
-    )
+    if verbose:
+
+        print(
+            "Key generation settings:",
+            spec,
+            bg_seed,
+            fg_seed_start,
+            frozen_step_ratio,
+            so_gligen_scheduled_sampling_beta,
+            overall_gligen_scheduled_sampling_beta,
+            overall_max_index_step,
+        )
+
+    print(''.join(['-']*80)+'\n')
 
     (
         so_prompt_phrase_word_box_list,
@@ -314,7 +318,7 @@ def run(
         max_index_step=max_index_step,
         use_ratio_based_loss=False,
         guidance_attn_keys=guidance_attn_keys,
-        verbose=True,
+        verbose=verbose,
     )
 
     sam_refine_kwargs = dict(
@@ -325,11 +329,6 @@ def run(
         H=H,
         W=W,
     )
-
-    # if verbose:
-    #     vis.visualize_bboxes(
-    #         bboxes=[item[-1] for item in so_prompt_phrase_word_box_list], H=H, W=W
-    #     )
 
     # Note that so and overall use different negative prompts
 
@@ -385,6 +384,8 @@ def run(
                 fast_after_steps=fast_after_steps,
                 fast_rate=2,
                 verbose=verbose,
+                show_progress=show_progress,
+                **extra_kwargs,
             )
         else:
             # No per-box guidance
@@ -485,7 +486,7 @@ def run(
             guidance_attn_keys=guidance_attn_keys,
             ref_ca_loss_weight=ref_ca_loss_weight,
             use_ratio_based_loss=False,
-            verbose=True,
+            verbose=verbose,
         )
 
         # Generate with composed latents
@@ -508,11 +509,11 @@ def run(
             semantic_guidance_kwargs=overall_semantic_guidance_kwargs,
             frozen_steps=frozen_steps,
             frozen_mask=frozen_mask,
+            show_progress=show_progress,
         )
 
-        print(
-            f"Generation with spatial guidance from input latents and first {frozen_steps} steps frozen (directly from the composed latents input)"
-        )
+        print(f"Generation with spatial guidance from input latents and first {frozen_steps} steps frozen"+
+              "\n (Direct generation from the composed latents input)")
         print("Generation from composed latents (with semantic guidance)")
 
     utils.free_memory()

@@ -1,9 +1,8 @@
-import torch
-from tqdm import tqdm
+import torch, gc
+from tqdm.auto import tqdm
 from utils import guidance, schedule, boxdiff
 import utils
 from PIL import Image
-import gc
 import numpy as np
 from .attention import GatedSelfAttentionDense
 from .models import process_input_embeddings, torch_device
@@ -180,7 +179,7 @@ def generate_semantic_guidance(model_dict, latents, input_embeddings, num_infere
     # Repeating keys leads to different weights for each key.
     # assert len(set(semantic_guidance_kwargs['guidance_attn_keys'])) == len(semantic_guidance_kwargs['guidance_attn_keys']), f"guidance_attn_keys not unique: {semantic_guidance_kwargs['guidance_attn_keys']}"
 
-    for index, t in enumerate(tqdm(scheduler.timesteps, disable=not show_progress)):
+    for index, t in enumerate(tqdm(scheduler.timesteps, disable=not show_progress, desc='Semantic Guidance (Timesteps)')):
         # expand the latents if we are doing classifier-free guidance to avoid doing two forward passes.
         
         if bboxes:
@@ -326,13 +325,17 @@ def generate_gligen(model_dict, latents, input_embeddings, num_inference_steps, 
     return_saved_cross_attn=False, saved_cross_attn_keys=None, return_cond_ca_only=False, return_token_ca_only=None, 
     offload_cross_attn_to_cpu=False, offload_latents_to_cpu=True,
     semantic_guidance=False, semantic_guidance_bboxes=None, semantic_guidance_object_positions=None, semantic_guidance_kwargs=None, 
-    return_box_vis=False, show_progress=True, save_all_latents=False, batched_condition=False, dynamic_num_inference_steps=False, fast_after_steps=None, fast_rate=2):
+    return_box_vis=False, show_progress=True, save_all_latents=False, batched_condition=False, dynamic_num_inference_steps=False, fast_after_steps=None, fast_rate=2, verbose=False):
     """
     The `bboxes` should be a list, rather than a list of lists (one box per phrase, we can have multiple duplicated phrases).
     batched: 
         Enabled: bboxes and phrases should be a list (batch dimension) of items (specify the bboxes/phrases of each image in the batch).
         Disabled: bboxes and phrases should be a list of bboxes and phrases specifying the bboxes/phrases of one image (no batch dimension).
     """
+
+    if verbose:
+        print(f'Running GliGen pipeline for phrases: {phrases}')
+    
     vae, tokenizer, text_encoder, unet, scheduler, dtype = model_dict.vae, model_dict.tokenizer, model_dict.text_encoder, model_dict.unet, model_dict.scheduler, model_dict.dtype
     
     text_embeddings, _, cond_embeddings = process_input_embeddings(input_embeddings)
@@ -408,7 +411,12 @@ def generate_gligen(model_dict, latents, input_embeddings, num_inference_steps, 
     num_grounding_steps = int(gligen_scheduled_sampling_beta * len(timesteps))
     gligen_enable_fuser(unet, True)
 
-    for index, t in enumerate(tqdm(timesteps, disable=not show_progress)):
+    if semantic_guidance_kwargs is not None:
+        if not 'verbose' in semantic_guidance_kwargs:
+            print('Adding verbose to semantic guidance...')
+            semantic_guidance_kwargs['verbose'] = verbose
+
+    for index, t in enumerate(tqdm(timesteps, disable=not show_progress, desc=f'Gligen Pipeline (Timesteps)')):
         # Scheduled sampling
         if index == num_grounding_steps:
             gligen_enable_fuser(unet, False)
@@ -501,7 +509,7 @@ def invert(model_dict, latents, input_embeddings, num_inference_steps, guidance_
     timesteps, num_inference_steps = get_inverse_timesteps(inverse_scheduler, num_inference_steps, strength=1.0)
 
     inverted_latents = [latents.cpu()]
-    for t in tqdm(timesteps[:-1]):
+    for t in tqdm(timesteps[:-1], desc='Inverting Latents?'):
         # expand the latents if we are doing classifier-free guidance to avoid doing two forward passes.
         if guidance_scale > 0.:
             latent_model_input = torch.cat([latents] * 2)

@@ -1,6 +1,4 @@
-
 version = "gligen"
-
 
 from PIL import Image
 import torch
@@ -10,8 +8,6 @@ from models import pipelines
 from utils import parse
 from prompt import DEFAULT_OVERALL_NEGATIVE_PROMPT
 from easydict import EasyDict
-
-verbose = True
 
 assert "gligen" in models.sd_key, models.sd_key
 
@@ -39,7 +35,7 @@ run_ind = None
 # Note: need to keep the supervision, especially the box corrdinates, corresponds to each other in single object and overall.
 
 
-def run(spec, gligen_scheduled_sampling_beta=0.4, bg_seed=1):
+def run(spec, gligen_scheduled_sampling_beta=0.4, bg_seed=1, **kwargs):
     """
     so_center_box: using centered box in single object generation
     so_horizontal_center_only: move to the center horizontally only
@@ -48,11 +44,13 @@ def run(spec, gligen_scheduled_sampling_beta=0.4, bg_seed=1):
     horizontal_shift_only: only shift horizontally for the alignment of mask, latents, and cross-attention
     """
 
+    verbose = kwargs.get('verbose', True)
+
     (
         so_prompt_phrase_word_box_list,
         prompt,
         overall_phrases_words_bboxes,
-    ) = parse.convert_spec(spec, height, width, verbose=True)
+    ) = parse.convert_spec(spec, height, width, verbose=verbose)
     phrases = [item[0] for item in so_prompt_phrase_word_box_list]
     bboxes = [item[-1] for item in so_prompt_phrase_word_box_list]
     prompts = [prompt]

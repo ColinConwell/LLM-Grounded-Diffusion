@@ -282,12 +282,15 @@ def show_boxes(gen_boxes, bg_prompt=None, neg_prompt=None, ind=None, show=False,
         ax.add_collection(p)
 
     draw_boxes(anns)
+    
     if show:
         plt.show()
+        
     else:
-        print("Saved boxes visualizations to", f"{img_dir}/boxes.png", f"ind: {ind}")
+        print("Saving boxes visualizations to", f"{img_dir}/boxes.png")
         if ind is not None:
             plt.savefig(f"{img_dir}/boxes_{ind}.png")
+            print(f'... and also to {img_dir}/boxes_{ind}.png')
         plt.savefig(f"{img_dir}/boxes.png")
 
 def show_masks(masks):

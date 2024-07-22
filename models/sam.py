@@ -167,7 +167,7 @@ def sam_refine_attn(sam_input_image, token_attn_np, model_dict, height, width, H
                                                          rule="largest_over_conf", 
                                                          discourage_mask_below_confidence=discourage_mask_below_confidence, 
                                                          discourage_mask_below_coarse_iou=discourage_mask_below_coarse_iou,
-                                                         verbose=True)
+                                                         verbose=verbose)
 
     return mask_selected, conf_score_selected
 
@@ -179,7 +179,9 @@ def sam_refine_box(sam_input_image, box, *args, **kwargs):
 
     return mask_selected_batched_list[0][0], conf_score_selected_batched_list[0][0]
 
-def sam_refine_boxes(sam_input_images, boxes, model_dict, height, width, H, W, discourage_mask_below_confidence, discourage_mask_below_coarse_iou, verbose):
+def sam_refine_boxes(sam_input_images, boxes, model_dict, height, width, H, W, 
+                     discourage_mask_below_confidence, discourage_mask_below_coarse_iou, verbose=True):
+    
     # (w, h)
     input_boxes = [[utils.scale_proportion(box, H=height, W=width) for box in boxes_item] for boxes_item in boxes]
 
@@ -203,7 +205,7 @@ def sam_refine_boxes(sam_input_images, boxes, model_dict, height, width, H, W, d
                                                                 rule="largest_over_conf", 
                                                                 discourage_mask_below_confidence=discourage_mask_below_confidence, 
                                                                 discourage_mask_below_coarse_iou=discourage_mask_below_coarse_iou,
-                                                                verbose=True)
+                                                                verbose=verbose)
 
             mask_selected_list.append(mask_selected)
             conf_score_selected_list.append(conf_score_selected)

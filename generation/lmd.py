@@ -348,7 +348,7 @@ def run(
         bg_weight=bg_weight,
         use_ratio_based_loss=False,
         guidance_attn_keys=overall_guidance_attn_keys,
-        verbose=True,
+        verbose=verbose,
     )
 
     sam_refine_kwargs = dict(
@@ -364,11 +364,6 @@ def run(
         H=H,
         W=W,
     )
-
-    # if verbose:
-    #     vis.visualize_bboxes(
-    #         bboxes=[item[-1] for item in so_prompt_phrase_word_box_list], H=H, W=W
-    #     )
 
     # Note that so and overall use different negative prompts
 
@@ -393,7 +388,7 @@ def run(
             fg_blending_ratio=fg_blending_ratio,
             height=height,
             width=width,
-            verbose=False,
+            verbose=verbose,
         )
 
         if use_fast_schedule:
@@ -519,7 +514,7 @@ def run(
             guidance_attn_keys=overall_guidance_attn_keys,
             ref_ca_loss_weight=ref_ca_loss_weight,
             use_ratio_based_loss=False,
-            verbose=True,
+            verbose=verbose,
         )
 
         # Generate with composed latents
@@ -541,9 +536,9 @@ def run(
             semantic_guidance_kwargs=overall_semantic_guidance_kwargs,
         )
 
-        print(
-            f"Generation with spatial guidance from input latents and first {frozen_steps} steps frozen (directly from the composed latents input)"
-        )
+        print(f"Generation with spatial guidance from input latents and first {frozen_steps} steps frozen"+
+              "\n (Direct generation from the composed latents input)")
+        
         print("Generation from composed latents (with semantic guidance)")
 
     utils.free_memory()

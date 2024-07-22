@@ -25,7 +25,7 @@ def values_accessed():
 def init_cache(allow_nonexist=True):
     global global_cache
     assert cache_path, "Need to set cache path"
-    
+
     print(f"Cache path: {cache_path}")
     
     if not allow_nonexist:

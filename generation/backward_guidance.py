@@ -10,8 +10,6 @@ from utils import parse, guidance, latents
 from prompt import DEFAULT_OVERALL_NEGATIVE_PROMPT
 from easydict import EasyDict
 
-verbose = True
-
 use_fp16 = False
 
 print(f"Using SD: {models.sd_key}")
@@ -47,6 +45,7 @@ def run(
     overall_loss_threshold=0.2,
     overall_max_iter=5,
     overall_max_index_step=10,
+    **kwargs,
 ):
     """
     so_center_box: using centered box in single object generation
@@ -55,6 +54,8 @@ def run(
     align_with_overall_bboxes: Align the center of the mask, latents, and cross-attention with the center of the box in overall bboxes
     horizontal_shift_only: only shift horizontally for the alignment of mask, latents, and cross-attention
     """
+
+    verbose = kwargs.get('verbose', True)
 
     (
         so_prompt_phrase_word_box_list,
@@ -119,7 +120,7 @@ def run(
         word_token_indices=overall_word_token_indices,
         guidance_attn_keys=overall_guidance_attn_keys,
         ref_ca_loss_weight=0.5,
-        verbose=True,
+        verbose=verbose,
     )
 
     img_latents, images = pipelines.generate_semantic_guidance(

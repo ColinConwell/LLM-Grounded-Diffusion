@@ -1,8 +1,15 @@
+import os, sys
+
+try: # an import
+    from models import sam
+
+except: # addpath
+    sys.path += ['..']
+    
 from utils import parse, vis, cache
 from utils.llm import get_full_model_name, model_names
 from utils.parse import parse_input_with_negative, filter_boxes, show_boxes
-from tqdm import tqdm
-import os
+from tqdm.auto import tqdm
 from prompt import prompt_types, get_prompts, template_versions
 import matplotlib.pyplot as plt
 import models
@@ -298,7 +305,7 @@ for regenerate_ind in range(args.regenerate):
                     "extra_neg_prompt": neg_prompt,
                 }
 
-                print("spec:", spec)
+                print("spec:", spec, os.linesep)
 
                 if args.dry_run:
                     # Skip generation

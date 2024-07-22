@@ -1,0 +1,34 @@
+{
+    "prompt": "In an indoor scene, a blue cube directly above a red cube with a vase on the left of them",
+    "gen_boxes": [
+        [
+            "a blue cube",
+            [
+                202,
+                120,
+                110,
+                110
+            ]
+        ],
+        [
+            "a red cube",
+            [
+                202,
+                230,
+                110,
+                110
+            ]
+        ],
+        [
+            "a vase",
+            [
+                62,
+                190,
+                80,
+                150
+            ]
+        ]
+    ],
+    "bg_prompt": "An indoor scene",
+    "extra_neg_prompt": ""
+}

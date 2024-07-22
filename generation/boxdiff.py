@@ -1,7 +1,6 @@
 # Reference: This file heavily depends on boxdiff implementation in `utils/boxdiff.py`, which is largely from boxdiff repo code.
 version = "boxdiff"
 
-
 import torch
 import models
 from models import model_dict
@@ -9,8 +8,6 @@ from models import pipelines
 from utils import parse, guidance, latents
 from prompt import DEFAULT_OVERALL_NEGATIVE_PROMPT
 from easydict import EasyDict
-
-verbose = True
 
 vae, tokenizer, text_encoder, unet, scheduler, dtype = (
     model_dict.vae,
@@ -43,7 +40,7 @@ run_ind = None
 # Note: need to keep the supervision, especially the box corrdinates, corresponds to each other in single object and overall.
 
 
-def run(spec, bg_seed=1, overall_max_index_step=25):
+def run(spec, bg_seed=1, overall_max_index_step=25, **kwargs):
     """
     so_center_box: using centered box in single object generation
     so_horizontal_center_only: move to the center horizontally only
@@ -51,6 +48,8 @@ def run(spec, bg_seed=1, overall_max_index_step=25):
     align_with_overall_bboxes: Align the center of the mask, latents, and cross-attention with the center of the box in overall bboxes
     horizontal_shift_only: only shift horizontally for the alignment of mask, latents, and cross-attention
     """
+
+    kwargs = kwargs.get('verbose', True)
 
     (
         so_prompt_phrase_word_box_list,
@@ -82,6 +81,7 @@ def run(spec, bg_seed=1, overall_max_index_step=25):
     generator_bg = torch.manual_seed(
         bg_seed
     )  # Seed generator to create the inital latent noise
+    
     latents_bg = latents.get_scaled_latents(
         batch_size=1,
         in_channels=unet.config.in_channels,
@@ -112,7 +112,7 @@ def run(spec, bg_seed=1, overall_max_index_step=25):
         word_token_indices=overall_word_token_indices,
         guidance_attn_keys=overall_guidance_attn_keys,
         ref_ca_loss_weight=0.0,
-        verbose=True,
+        verbose=verbose,
     )
 
     img_latents, images = pipelines.generate_semantic_guidance(
