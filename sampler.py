@@ -1,3 +1,4 @@
+# general imports:
 import os, json
 import shutil
 
@@ -13,6 +14,7 @@ from tqdm.auto import tqdm
 
 import diffusers, openai
 
+# from this repo:
 import models
 from models import sam
 
@@ -107,12 +109,31 @@ def generate_layout(prompt, client=None, layout_prompt='auto', **kwargs):
         if 'choices' in response and response['choices']:
             return response['choices'][0]['message']['content']
 
-# replaces show_boxes in the original pipeline
-def draw_layout(bboxes, bg_prompt=None, neg_prompt=None, 
-                size=512, output_file=None, **kwargs):
+def parse_layout(prompt, layout, spec=None):
+    parsed_layout = parse_input_with_negative(layout, no_input=True)
+    gen_boxes, bg_prompt, neg_prompt = parsed_layout
     
-    if len(bboxes) == 0:
-        return None
+    gen_boxes = filter_boxes(gen_boxes, scale_boxes=False)
+    
+    specs = {
+        "prompt": prompt,
+        "gen_boxes": gen_boxes,
+        "bg_prompt": bg_prompt,
+        "extra_neg_prompt": neg_prompt,
+    }
+
+    return specs if not spec else specs[spec]
+
+# replaces show_boxes in the original pipeline
+def draw_layout(bboxes=None, bg_prompt=None, neg_prompt=None, 
+                size=(512,512), output_file=None, **kwargs):
+
+    for key in ['boxes', 'gen_boxes', 'bboxes']:
+        if key in kwargs:
+            bboxes = kwargs.pop(key); break
+
+    if bboxes is None or len(bboxes) == 0:
+        raise ValueError('No bboxes provided.')
 
     # Handle the size argument
     if isinstance(size, int):
@@ -157,6 +178,9 @@ def draw_layout(bboxes, bg_prompt=None, neg_prompt=None,
 
     plt.close(fig)
 
+    if kwargs.get('fig_only', False):
+        return fig # without axes
+
     return fig, ax # to modify further
 
 def _parse_output_files(output_dir, n_samples, prefix, ext, 
@@ -188,6 +212,9 @@ def _parse_output_files(output_dir, n_samples, prefix, ext,
     return None if not output_files else output_files
 
 def load_lmd_plus(**kwargs):
+    if kwargs.get('minimal_logs', True):
+        diffusers.logging.set_verbosity(50)
+        
     models.sd_key = "gligen/diffusers-generation-text-box"
     models.sd_version = "sdv1.4"
 
@@ -199,117 +226,16 @@ def load_lmd_plus(**kwargs):
     models.model_dict.update(sam_model_dict)
 
     from generation import lmd_plus
+    
+    if kwargs.get('minimal_logs', True):
+        diffusers.logging.set_verbosity(30)
 
     return lmd_plus # the default model
 
-def generate(prompt, n_samples=1, layout=None, output_dir=None, 
-             client=None, all_quiet=False, **kwargs):
-
-    default_kwargs = {'run_model': 'lmd_plus',
-                      'prompt_model': 'gpt-4',
-                      'layout_prompt': 'auto',
-                      'seed_offset': 0,
-                      'use_sdxl': False,
-                      'report_steps': True,
-                      'progress_bars': True}
-
-    args = argparse.Namespace(**default_kwargs)
-
-    if layout is None: # generate a layout
-        layout_prompt = args.layout_prompt
-        layout = generate_layout(prompt, client, layout_prompt)
-
-    if output_dir is not None:
-        
-        if kwargs.pop('fresh_start', False):
-            shutil.rmtree(output_dir)
-            os.makedirs(output_dir, exists_ok=False)
-
-        parse_args = (output_dir, n_samples, 'sample', 'png')
-        output_files = _parse_output_files(*parse_args, **kwargs)
-
-        if not output_files or len(output_files) == 0:
-            print('All samples generated.'); return
-
-    parsed_layout = parse_input_with_negative(layout, no_input=True)
-    gen_boxes, bg_prompt, neg_prompt = parsed_layout
-    
-    gen_boxes = filter_boxes(gen_boxes, scale_boxes=False)
-    
-    specs = {
-        "prompt": prompt,
-        "gen_boxes": gen_boxes,
-        "bg_prompt": bg_prompt,
-        "extra_neg_prompt": neg_prompt,
-    }
-
-    generation = kwargs.get('generator', None)
-    if generation is None:
-        generation = load_lmd_plus()
-    
-    version = generation.version
-    run_model = generation.run
-
-    if args.use_sdxl:
-        # Offloading model saves GPU
-        sdxl.init(offload_model=True)
-
-    # constants for seeds:
-    LARGE_CONSTANT1 = 123456789
-    LARGE_CONSTANT2 = 56789
-    LARGE_CONSTANT3 = 6789
-    LARGE_CONSTANT4 = 7890
-
-    run_kwargs = {'frozen_step_ratio': 0.5}
-
-    for key, value in default_kwargs.items():
-        if key == 'report_steps' and value:
-            run_kwargs['report_steps'] = True
-
-        if key =='progress_bars':
-            if not value:
-                run_kwargs['show_progress'] = False
-
-    all_outputs = [] # +1 image per sample
-
-    if output_dir is not None: # update
-        n_samples = len(output_files)
-
-    if not all_quiet: # report samples, specs
-        print(f'Now generating {n_samples} samples with layout:\n', specs)
-
-    for sample_index in range(n_samples):
-        # This ensures different repeats have different seeds.
-        index_offset = sample_index * LARGE_CONSTANT3 + args.seed_offset
-    
-        output = run_model(
-            spec=specs,
-            bg_seed=index_offset,
-            fg_seed_start=index_offset + LARGE_CONSTANT1,
-            overall_prompt_override=prompt,
-            **run_kwargs,
-        )
-    
-        output = output.image
-    
-        if args.use_sdxl:
-            refine_seed = index_offset + LARGE_CONSTANT4
-            
-            output = sdxl.refine(image=output, spec=specs, 
-                                 refine_seed=refine_seed, 
-                                 refinement_step_ratio=0.3)
-
-        if output_dir is not None:
-            output_file = output_files[sample_index]
-            image_from_array(output).save(output_file)
-
-            save_json(specs, output_file.replace('png', 'json'))
-
-        all_outputs += [output]
-
-        return output if len(all_outputs) == 1 else all_outputs
-
 def load_generator(args=None, run_model='lmd_plus', use_sdv2=False, **kwargs):
+    if kwargs.get('minimal_logs', True):
+        diffusers.logging.set_verbosity(50)
+
     if args is None:
         args = argparse.Namespace(**{'run_model': run_model, 'use_sdv2': use_sdv2})
     
@@ -369,7 +295,114 @@ def load_generator(args=None, run_model='lmd_plus', use_sdv2=False, **kwargs):
     else: # run_model is not available
         raise ValueError(f"Unknown model type: {args.run_model}")
 
+    if kwargs.get('minimal_logs', True):
+        diffusers.logging.set_verbosity(30)
+
     return generation # backend for generating images
+
+def generate(prompt, n_samples=1, layout=None, output_dir=None, 
+             client=None, all_quiet=False, **kwargs):
+
+    default_kwargs = {'run_model': 'lmd_plus',
+                      'layout_prompt': 'auto',
+                      'seed_offset': 0,
+                      'use_sdxl': False,
+                      'report_steps': True,
+                      'progress_bars': True}
+
+    for key, value in kwargs.items():
+        if key in default_kwargs:
+            default_kwargs[key] = value
+
+    args = argparse.Namespace(**default_kwargs)
+
+    if layout is None: # generate a layout
+        layout_prompt = args.layout_prompt
+        layout = generate_layout(prompt, client, layout_prompt)
+
+    if output_dir is not None:
+        
+        if kwargs.pop('fresh_start', False):
+            shutil.rmtree(output_dir)
+            os.makedirs(output_dir, exists_ok=False)
+
+        parse_args = (output_dir, n_samples, 'sample', 'png')
+        output_files = _parse_output_files(*parse_args, **kwargs)
+
+        if not output_files or len(output_files) == 0:
+            print('All samples generated.'); return
+
+    specs = parse_layout(prompt, layout)
+
+    generation = kwargs.get('generator', None)
+    if generation is None:
+        generation = load_lmd_plus()
+    
+    version = generation.version
+    run_model = generation.run
+
+    if args.use_sdxl:
+        # Offloading model saves GPU
+        sdxl.init(offload_model=True)
+
+    # constants for seeds:
+    LARGE_CONSTANT1 = 123456789
+    LARGE_CONSTANT2 = 56789
+    LARGE_CONSTANT3 = 6789
+    LARGE_CONSTANT4 = 7890
+
+    run_kwargs = {'frozen_step_ratio': 0.5}
+
+    for key, value in default_kwargs.items():
+        if key == 'report_steps' and value:
+            run_kwargs['report_steps'] = True
+
+        if key =='progress_bars':
+            if not value:
+                run_kwargs['show_progress'] = False
+
+    all_outputs = [] # +1 image per sample
+
+    if output_dir is not None: # update
+        n_samples = len(output_files)
+
+    if not all_quiet: # report samples, specs
+        print(f'Now generating {n_samples} samples with layout:\n', specs)
+        
+    if all_quiet: # silence reports + progress
+        for kwarg in ['report_steps', 'show_progress']:
+            run_kwargs[kwarg] = not all_quiet
+
+    for sample_index in range(n_samples):
+        # This ensures different repeats have different seeds.
+        index_offset = sample_index * LARGE_CONSTANT3 + args.seed_offset
+    
+        output = run_model(
+            spec=specs,
+            bg_seed=index_offset,
+            fg_seed_start=index_offset + LARGE_CONSTANT1,
+            overall_prompt_override=prompt,
+            **run_kwargs,
+        )
+    
+        output = output.image
+    
+        if args.use_sdxl:
+            refine_seed = index_offset + LARGE_CONSTANT4
+            
+            output = sdxl.refine(image=output, spec=specs, 
+                                 refine_seed=refine_seed, 
+                                 refinement_step_ratio=0.3)
+
+        if output_dir is not None:
+            output_file = output_files[sample_index]
+            image_from_array(output).save(output_file)
+
+            save_json(specs, output_file.replace('png', 'json'))
+
+        all_outputs += [output]
+
+        return output if len(all_outputs) == 1 else all_outputs
 
 def generate_plus(prompt, n_samples=1, layout=None, output_dir=None,
                   client=None, all_quiet=False, **kwargs):
@@ -401,7 +434,7 @@ def generate_plus(prompt, n_samples=1, layout=None, output_dir=None,
                     kwarg_set[key1] = parsed_kwargs.pop(key2)
 
     if kwargs.pop('check_kwargs', False):
-        return core_kwargs, other_kwargs, report_kwargs
+        return core_kwargs, save_kwargs, report_kwargs
 
     args = argparse.Namespace(**core_kwargs)
 
@@ -422,21 +455,11 @@ def generate_plus(prompt, n_samples=1, layout=None, output_dir=None,
         if not output_files or len(output_files) == 0:
             print('All samples generated.'); return
 
-    parsed_layout = parse_input_with_negative(layout, no_input=True)
-    gen_boxes, bg_prompt, neg_prompt = parsed_layout
-    
-    gen_boxes = filter_boxes(gen_boxes, scale_boxes=False)
-    
-    specs = {
-        "prompt": prompt,
-        "gen_boxes": gen_boxes,
-        "bg_prompt": bg_prompt,
-        "extra_neg_prompt": neg_prompt,
-    }
+    specs = parse_layout(prompt, layout)
         
     generation = kwargs.get('generator', None)
     if generation is None:
-        generation = load_generation(args)
+        generation = load_generator(args)
     
     version = generation.version
     run = generation.run
@@ -473,6 +496,10 @@ def generate_plus(prompt, n_samples=1, layout=None, output_dir=None,
     if not all_quiet: # report samples, specs
         print(f'Now generating {n_samples} samples with layout:\n', specs)
         print(f'Running {run_func_path} as the generator...')
+        
+    if all_quiet: # silence reports + progress
+        for kwarg in ['report_steps', 'show_progress']:
+            run_kwargs[kwarg] = not all_quiet
 
     for sample_index in range(n_samples):
         # This ensures different repeats have different seeds.
@@ -558,4 +585,48 @@ def generate_plus(prompt, n_samples=1, layout=None, output_dir=None,
 
         all_outputs += [output]
 
-        return output if len(all_outputs) == 1 else all_outputs
+    return output if len(all_outputs) == 1 else all_outputs
+
+def stitch_images(image1, image2, resize_to_smaller=True):
+    from io import BytesIO
+    
+    def get_image(obj):
+        if isinstance(obj, np.ndarray):
+            return Image.fromarray(obj)
+        elif isinstance(obj, plt.Figure):
+            # Convert Matplotlib figure to PIL Image using an IO buffer
+            buf = BytesIO()
+            obj.savefig(buf, format='png', bbox_inches='tight')
+            buf.seek(0)
+            img = Image.open(buf)
+            img.load()  # This is important as it loads the image data from the buffer
+            buf.close()  # Close the buffer after the image is loaded
+            return img
+        elif isinstance(obj, Image.Image):
+            return obj
+        else:
+            raise ValueError("Unsupported image type")
+
+    # Convert both images to PIL Image objects
+    img1 = get_image(image1)
+    img2 = get_image(image2)
+
+    # Resize images if necessary
+    if resize_to_smaller:
+        if img1.size[1] > img2.size[1]:
+            img1 = img1.resize((int(img1.size[0] * img2.size[1] / img1.size[1]), img2.size[1]))
+        else:
+            img2 = img2.resize((int(img2.size[0] * img1.size[1] / img2.size[1]), img1.size[1]))
+
+    # Determine new image dimensions
+    new_width = img1.width + img2.width
+    new_height = max(img1.height, img2.height)
+
+    # Create a new image with the appropriate size
+    new_img = Image.new('RGB', (new_width, new_height))
+
+    # Paste the two images into the new image
+    new_img.paste(img1, (0, 0))
+    new_img.paste(img2, (img1.width, 0))
+
+    return new_img # stitch of 2 input images (plt.figure or Image)
